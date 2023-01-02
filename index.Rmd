@@ -1,0 +1,651 @@
+---
+title: "Supplementary Materials for XX title"
+author: "Goumi A, Wlodarczyk V, Gosling CJ & Pinabiaux C"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    self_contained: yes
+---
+
+---
+
+```{css, echo=FALSE}
+hr {
+  margin-top: 5rem !important;
+  margin-bottom: 5rem !important;
+  border-top: 3px double !important;
+}
+```
+
+```{r, message=FALSE, warning=FALSE, echo = FALSE, results = 'hide'}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(TOSTER)
+library(table1)
+library(emmeans)
+library(metaviz)
+smd <- function(x, df, level) {
+    df_smd = data.frame(x)
+    n2 = nrow(df[which(df[, "group"] == "Control"), ])
+    n1 = nrow(df[which(df[, "group"] == "Experimental"), ])
+    sd_n2 = sd(df[which(df[, "group"] == "Control"), ]$z1)
+    sd_n1 = sd(df[which(df[, "group"] == "Experimental"), ]$z1)
+    res = compute.es::mes(m.1 = df_smd$emmean[2], m.2 = df_smd$emmean[1], 
+                          sd.1 = sd_n1, sd.2 = sd_n2, 
+                          n.1 = n1, n.2 = n2,
+                          df_smd$emmean[2],
+                          verbose = FALSE,
+                          level = level)
+    return(list(res$d, res$l.d, res$u.d, paste0("SMD = ", res$d, " [", res$l.d, ", ", res$u.d, "]")))
+}
+
+```
+
+```{r, message=FALSE, warning=FALSE, echo = FALSE, results = 'hide'}
+dat_long = read.delim("data_beebot.txt")
+
+dat_long$value = with(dat_long, ifelse(flip == "yes", -value, value))
+```
+
+```{r, message=FALSE, warning=FALSE, echo = FALSE, results = 'hide'}
+# we translate the data + center our outcomes at t0 and t1 + assess the pre/post correlation for each of our outcomes
+dat_semiwide_raw <- 
+  dat_long %>% 
+  pivot_wider(names_from = "time", values_from = "value") %>%
+  dplyr::group_by(outcome) %>%
+  dplyr::mutate(z0 = as.numeric(as.character(scale(t0))),
+                z1 = as.numeric(as.character(scale(t1))),
+                r = as.numeric(as.character(cor.test(~t0 + t1)$estimate))) %>% 
+  dplyr::ungroup()
+
+dat_semiwide <- dat_semiwide_raw
+
+```
+
+```{r, message=FALSE, warning=FALSE, echo = FALSE}
+dat_comp <- dat_semiwide %>%
+  group_by(participant, experimentatrice, eleve, group, ID, age, sexe, GEN_outcome, flip) %>%
+  summarise(z0 = sum(z0),
+            z1 = sum(z1))
+```
+
+```{r, message=FALSE, warning=FALSE, echo = FALSE, results = 'hide'}
+dat_wide1 <- dat_comp %>%
+  dplyr::select(-c(z1, flip)) %>%
+  pivot_wider(names_from = GEN_outcome, values_from = z0)
+
+dat_wide2 <- dat_long %>%
+  filter(time == "t0") %>%
+  dplyr::select(-c(flip, GEN_outcome)) %>%
+  pivot_wider(names_from = outcome, values_from = value)
+
+dat_wide = dat_long %>%
+  group_by(participant) %>%
+  slice(1)
+
+
+```
+
+## I. Table1 
+Demographic characteristics of our sample depending on the group.
+```{r}
+dat_wide$age <- as.numeric(as.character(dat_wide$age))
+dat_wide$sex <- factor(dat_wide$sexe)
+
+table1::table1(~ age + sex | group, data=dat_wide, overall = "Overall",
+              render.continuous=c(.="Mean / Median<br>SD<br>[min, max]"))
+```
+
+Effect sizes of the group differences
+```{r}
+smd_age <- with(dat_wide, lsr::cohensD(age ~ group))
+smd_age
+
+chi <- with(dat_wide, chisq.test(table(sexe, group)))
+confintr::cramersv(chi)
+```
+
+---
+
+## II. Distributions{.tabset}
+
+Outcome distribution at baseline
+
+### Inhibition
+```{r}
+dat_inhib_dist <- subset(dat_long, grepl("Inhibition", dat_long$GEN_outcome) & time != "t1")
+
+ggplot(dat_inhib_dist, aes(x = value)) + 
+  geom_histogram(aes(y=..density..), fill = "grey", alpha = 0.8) + 
+  geom_density(alpha = 0.3, aes(fill = group)) + 
+  facet_wrap(. ~ outcome, scales = "free") +
+  theme_bw() + 
+  theme(legend.position = "bottom")
+  
+```
+
+---
+
+### Working Memory
+```{r}
+dat_memory_dist <- subset(dat_long, grepl("memory", dat_long$GEN_outcome) & time != "t1")
+
+ggplot(dat_memory_dist, aes(x = value)) + 
+  geom_histogram(aes(y=..density..), fill = "grey", alpha = 0.8) + 
+  geom_density(alpha = 0.3, aes(fill = group)) + 
+  facet_wrap(. ~ outcome, scales = "free") +
+  theme_bw() + 
+  theme(legend.position = "bottom")
+```
+
+---
+
+### Overal EF
+```{r}
+dat_EF_dist <- subset(dat_long, grepl("Executive", dat_long$GEN_outcome) & time != "t1")
+
+ggplot(dat_EF_dist, aes(x = value)) + 
+  geom_histogram(aes(y=..density..), fill = "grey", alpha = 0.8) + 
+  geom_density(alpha = 0.3, aes(fill = group)) + 
+  facet_wrap(. ~ GEN_outcome, scales = "free") +
+  theme_bw() + 
+  theme(legend.position = "bottom")
+```
+
+---
+
+### Other
+```{r}
+dat_othr_dist <- subset(dat_long, !grepl("memory", dat_long$GEN_outcome) & !grepl("Inhibition", dat_long$GEN_outcome) & !grepl("Executive", dat_long$GEN_outcome) & time != "t1")
+
+ggplot(dat_othr_dist, aes(x = value)) + 
+  geom_histogram(aes(y=..density..), fill = "grey", alpha = 0.8) + 
+  geom_density(alpha = 0.3, aes(fill = group)) + 
+  facet_wrap(. ~ outcome, scales = "free") +
+  theme_bw() + 
+  theme(legend.position = "bottom")
+
+```
+
+---
+
+## III. Preliminary analyses
+
+### BeeBot mastering
+```{r}
+dat_eval = subset(dat_wide, s4_bin == 1)
+paste0(round(nrow(dat_eval)/sum(!is.na(dat_wide$s4_bin))*100, 3), "% of the sample succeed at a beebot mastering test after the last training session, with a mean score of ", round(mean(dat_eval$s4_0_4), 3), "/4")
+
+```
+
+### Correlation between tests
+```{r, fig.width = 15, fig.height=10}
+ggstatsplot::ggcorrmat(dat_wide1[,which(colnames(dat_wide1) == "Denomination (NEPSY-II)"):ncol(dat_wide1)],
+          p.adjust.method = "none",
+          ggtheme = ggplot2::theme_bw(),
+          colors = c("#0016FF", "white", "#FF0000"),
+          sig.level = 0.99)
+```
+
+```{r, fig.width = 15, fig.height=10}
+# ggstatsplot::ggcorrmat(dat_wide2[,which(colnames(dat_wide2) == "Planification (KABC-II)"):ncol(dat_wide2)],
+#           p.adjust.method = "none",
+#           ggtheme = ggplot2::theme_bw(),
+#           colors = c("#0016FF", "white", "#FF0000"),
+#           sig.level = 0.05)
+```
+
+---
+
+## IV. Main analysis 
+
+```{r, message=FALSE, warning=FALSE, echo = FALSE}
+no = length(unique(dat_comp$GEN_outcome))
+res_main <- data.frame(outcome = rep(NA, no),
+                       flip = rep(NA, no),
+                       n_cont  = rep(NA, no),
+                       n_exp = rep(NA, no),
+                       d = rep(NA, no) ,
+                       d_se = rep(NA, no) ,
+                       d_low = rep(NA, no),
+                       d_up = rep(NA, no),
+                       d_tot = rep(NA, no),
+                       B = rep(NA, no),
+                       SE = rep(NA, no),
+                       p = rep(NA, no))
+a = 0
+
+for (out in unique(dat_comp$GEN_outcome)) {
+  # initialize some settings and re-initializing them as NA at each loop
+  a = a+1
+  mod = d = means = NA
+  
+  # subset dataframe ----------------
+  dat_i = subset(dat_comp, GEN_outcome == out)
+  
+  ## ancova pre/post adjusted
+  mod = lm(z1 ~ group + z0 + age + sexe, data = dat_i)
+  means = emmeans::emmeans(mod, ~factor(group))
+  # identify critical information ------------------------------------------------------------
+  res_main$outcome[a] = out
+  res_main$flip[a] = unique(dat_i$flip)
+  res_main$n_cont[a] = nrow(subset(dat_i, group == "Control"))
+  res_main$n_exp[a] = nrow(subset(dat_i, group == "Experimental"))
+  res_main$B[a] = summary(mod)$coefficients[2,1]
+  res_main$SE[a] = summary(mod)$coefficients[2,2]
+  res_main$p[a] = summary(mod)$coefficients[2,4]
+
+  # extract results ---------
+  d = smd(x = means, df = dat_i, level = 95)
+  
+  res_main$d[a] = d[[1]]
+  res_main$d_low[a] = d[[2]]
+  res_main$d_up[a] = d[[3]]
+  res_main$d_tot[a] = d[[4]]
+}
+res_main$d_se = (res_main$d_up - res_main$d_low) / (2*1.96)
+### TOST analysis
+res_main$TOST <- NA
+for (i in 1:nrow(res_main)) {
+  res_main$TOST[i] <- max(
+    abs(tsum_TOST(m1 = res_main$d[i], m2 = 0, sd1 = 1, sd2 = 1, 
+              n1 = res_main$n_cont[i], n2 = res_main$n_exp[i], 
+              low_eqbound = -0.8, high_eqbound = 0.8, alpha = 0.05,
+              var.equal = FALSE, bias_correction = FALSE,
+              eqbound_type = "raw")$smd$dhigh),
+    abs(tsum_TOST(m1 = res_main$d[i], m2 = 0, sd1 = 1, sd2 = 1, 
+              n1 = res_main$n_cont[i], n2 = res_main$n_exp[i], 
+              low_eqbound = -0.8, high_eqbound = 0.8, alpha = 0.05,
+              var.equal = FALSE, bias_correction = FALSE,
+              eqbound_type = "raw")$smd$dlow))
+}
+
+```
+
+### Table
+```{r}
+res_main = res_main %>% mutate(across(where(is.numeric), round, digits=3))
+DT::datatable(res_main, 
+              rownames = FALSE,
+              extensions = "Buttons",
+              options = list(  # options
+                scrollX = TRUE,
+                dom = c('tB'), 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                scrollY = "600px", 
+                pageLength = 30,
+                order = list(4, 'asc'),
+                columnDefs = list(
+                  list(width = '70px',
+                       targets = "_all"),
+                  list(className = 'dt-center', 
+                       targets = "_all"))))
+```
+
+---
+
+### Forest plot
+```{r, warning = FALSE}
+tab.main <- data.frame(
+  'General outcome' = res_main$outcome,
+  TOST = res_main$TOST)
+
+metaviz::viz_forest(x = res_main[, c("d", "d_se")], 
+           variant = "classic",
+           col = "Greys", xlab = "SMD", annotate_CI = TRUE, 
+           study_table = tab.main,
+           type = "study_only",
+           text_size = 2.5,
+           x_limit = c(-1.5, 1.5),
+           x_breaks = seq(-3, 3, 1))
+```
+
+---
+
+### Box plots{.tabset}
+```{r, echo = FALSE}
+dat_plot <- 
+  dat_comp %>%
+  pivot_longer(
+   cols = c(z0, z1),
+   names_to = "time",
+   values_to = "value",
+  )
+dat_plot$time[dat_plot$time == "z0"] <- "t0"
+dat_plot$time[dat_plot$time == "z1"] <- "t1"
+```
+
+---
+
+#### Inhibition
+```{r}
+dat_inhib <- subset(dat_plot, grepl("Inhibition", dat_plot$GEN_outcome))
+
+ggplot(dat_inhib, aes(x = time, y = value, color = group, fill = group)) +
+  # geom_line() +
+  geom_boxplot(alpha = 0.2) +
+  facet_grid(. ~ GEN_outcome,  scales = 'free') + 
+theme_bw() + 
+  theme(legend.position="bottom")
+```
+
+---
+
+#### Working memory
+```{r}
+dat_memory <- subset(dat_plot, grepl("memory", dat_plot$GEN_outcome))
+
+ggplot(dat_memory, aes(x = time, y = value, color = group, fill = group)) +
+  geom_boxplot(alpha = 0.2) +
+  facet_grid(. ~ GEN_outcome,  scales = 'free') + 
+theme_bw()  + 
+  theme(legend.position="bottom")
+```
+
+---
+
+#### Overall EF
+```{r}
+dat_EF <- subset(dat_plot, grepl("Executive", dat_plot$GEN_outcome))
+
+ggplot(dat_EF, aes(x = time, y = value, color = group, fill = group)) +
+  geom_boxplot(alpha = 0.2) +
+  facet_grid(. ~ GEN_outcome,  scales = 'free') + 
+theme_bw()  + 
+  theme(legend.position="bottom")
+```
+
+---
+
+#### Others
+```{r}
+dat_othr <- subset(dat_plot, !grepl("memory", dat_plot$GEN_outcome) & !grepl("Inhibition", dat_plot$GEN_outcome) & !grepl("Executive", dat_plot$GEN_outcome))
+
+ggplot(dat_othr, aes(x = time, y = value, color = group, fill = group)) +
+  geom_boxplot(alpha = 0.2) +
+  facet_grid(. ~ GEN_outcome,  scales = 'free') + 
+  theme_bw() + 
+  theme(legend.position="bottom")
+```
+
+---
+
+## V. Additional analyses
+
+### 1. No demographic covariates
+
+```{r, echo = FALSE}
+no = length(unique(dat_comp$GEN_outcome))
+res_S2 <- data.frame(outcome = rep(NA, no),
+                       flip = rep(NA, no),
+                       n_cont  = rep(NA, no),
+                       n_exp = rep(NA, no),
+                       d = rep(NA, no) ,
+                       d_se = rep(NA, no) ,
+                       d_low = rep(NA, no),
+                       d_up = rep(NA, no),
+                       d_tot = rep(NA, no),
+                       B = rep(NA, no),
+                       SE = rep(NA, no),
+                       p = rep(NA, no))
+a = 0
+
+for (out in unique(dat_comp$GEN_outcome)) {
+  # initialize some settings and re-initializing them as NA at each loop
+  a = a+1
+  mod = d = means = NA
+  
+  # subset dataframe ----------------
+  dat_i = subset(dat_comp, GEN_outcome == out)
+  
+  ## ancova pre/post adjusted
+  mod = lm(z1 ~ group + z0, data = dat_i)
+  means = emmeans::emmeans(mod, ~factor(group))
+  # identify critical information ------------------------------------------------------------
+  res_S2$outcome[a] = out
+  res_S2$flip[a] = unique(dat_i$flip)
+  res_S2$n_cont[a] = nrow(subset(dat_i, group == "Control"))
+  res_S2$n_exp[a] = nrow(subset(dat_i, group == "Experimental"))
+  res_S2$B[a] = summary(mod)$coefficients[2,1]
+  res_S2$SE[a] = summary(mod)$coefficients[2,2]
+  res_S2$p[a] = summary(mod)$coefficients[2,4]
+
+  # extract results ---------
+  d = smd(x = means, df = dat_i, level = 95)
+  
+  res_S2$d[a] = d[[1]]
+  res_S2$d_low[a] = d[[2]]
+  res_S2$d_up[a] = d[[3]]
+  res_S2$d_tot[a] = d[[4]]
+}
+res_S2$d_se = (res_S2$d_up - res_S2$d_low) / (2*1.96)
+### TOST analysis
+res_S2$TOST <- NA
+for (i in 1:nrow(res_S2)) {
+  res_S2$TOST[i] <- max(
+    abs(tsum_TOST(m1 = res_S2$d[i], m2 = 0, sd1 = 1, sd2 = 1, 
+              n1 = res_S2$n_cont[i], n2 = res_S2$n_exp[i], 
+              low_eqbound = -0.8, high_eqbound = 0.8, alpha = 0.05,
+              var.equal = FALSE, bias_correction = FALSE,
+              eqbound_type = "raw")$smd$dhigh),
+    abs(tsum_TOST(m1 = res_S2$d[i], m2 = 0, sd1 = 1, sd2 = 1, 
+              n1 = res_S2$n_cont[i], n2 = res_S2$n_exp[i], 
+              low_eqbound = -0.8, high_eqbound = 0.8, alpha = 0.05,
+              var.equal = FALSE, bias_correction = FALSE,
+              eqbound_type = "raw")$smd$dlow))
+}
+
+```
+
+#### Table
+```{r}
+res_S2 = res_S2 %>% mutate(across(where(is.numeric), round, digits=3))
+DT::datatable(res_S2, 
+              rownames = FALSE,
+              extensions = "Buttons",
+              options = list(  # options
+                scrollX = TRUE,
+                dom = c('tB'), 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                scrollY = "600px", 
+                pageLength = 30,
+                order = list(4, 'asc'),
+                columnDefs = list(
+                  list(width = '70px',
+                       targets = "_all"),
+                  list(className = 'dt-center', 
+                       targets = "_all"))))
+```
+
+#### Forest plot
+```{r, warning = FALSE}
+tab.S2 <- data.frame(
+  'General outcome' = res_S2$outcome,
+  TOST = res_S2$TOST)
+
+metaviz::viz_forest(x = res_S2[, c("d", "d_se")], 
+           variant = "classic",
+           col = "Greys", xlab = "SMD", annotate_CI = TRUE, 
+           study_table = tab.S2,
+           type = "study_only",
+           text_size = 2.5,
+           x_limit = c(-1.5, 1.5),
+           x_breaks = seq(-3, 3, 1))
+```
+
+---
+
+### 2. All outcomes
+
+```{r, echo = FALSE}
+row = length(unique(dat_semiwide$outcome))
+res_S1 <- data.frame(outcome = rep(NA, row),
+                       flip = rep(NA, row),
+                       n_cont  = rep(NA, row),
+                       n_exp = rep(NA, row),
+                       d = rep(NA, row) ,
+                       d_se = rep(NA, row) ,
+                       d_low = rep(NA, row),
+                       d_up = rep(NA, row),
+                       d_tot = rep(NA,row),
+                       B = rep(NA, row),
+                       SE = rep(NA, row),
+                       p = rep(NA, row))
+a = 0
+
+for (out in unique(dat_semiwide$outcome)) {
+  # initialize some settings and re-initializing them as NA at each loop
+  a = a+1
+  mod = d = means = NA
+  
+  # subset dataframe ----------------
+  dat_i = subset(dat_semiwide, outcome == out)
+  
+  ## ancova pre/post adjusted
+  mod = lm(z1 ~ group + z0 + age + sexe, data = dat_i)
+  means = emmeans::emmeans(mod, ~factor(group))
+  # identify critical information ------------------------------------------------------------
+  res_S1$outcome[a] = out
+  res_S1$flip[a] = unique(dat_i$flip)
+  res_S1$n_cont[a] = nrow(subset(dat_i, group == "Control"))
+  res_S1$n_exp[a] = nrow(subset(dat_i, group == "Experimental"))
+  res_S1$B[a] = summary(mod)$coefficients[2,1]
+  res_S1$SE[a] = summary(mod)$coefficients[2,2]
+  res_S1$p[a] = summary(mod)$coefficients[2,4]
+
+  # extract results ---------
+  d = smd(x = means, df = dat_i, level = 95)
+  
+  res_S1$d[a] = d[[1]]
+  res_S1$d_low[a] = d[[2]]
+  res_S1$d_up[a] = d[[3]]
+  res_S1$d_tot[a] = d[[4]]
+}
+res_S1$d_se = (res_S1$d_up - res_S1$d_low) / (2*1.96)
+### TOST analysis
+res_S1$TOST <- NA
+for (i in 1:nrow(res_S1)) {
+  res_S1$TOST[i] <- max(
+    abs(tsum_TOST(m1 = res_S1$d[i], m2 = 0, sd1 = 1, sd2 = 1, 
+              n1 = res_S1$n_cont[i], n2 = res_S1$n_exp[i], 
+              low_eqbound = -0.8, high_eqbound = 0.8, alpha = 0.05,
+              var.equal = FALSE, bias_correction = FALSE,
+              eqbound_type = "raw")$smd$dhigh),
+    abs(tsum_TOST(m1 = res_S1$d[i], m2 = 0, sd1 = 1, sd2 = 1, 
+              n1 = res_S1$n_cont[i], n2 = res_S1$n_exp[i], 
+              low_eqbound = -0.8, high_eqbound = 0.8, alpha = 0.05,
+              var.equal = FALSE, bias_correction = FALSE,
+              eqbound_type = "raw")$smd$dlow))
+}
+```
+
+#### Table
+```{r}
+
+res_S1 = res_S1 %>% mutate(across(where(is.numeric), round, digits=3))
+
+DT::datatable(res_S1, 
+              rownames = FALSE,
+              extensions = "Buttons",
+              options = list(  # options
+                scrollX = TRUE,
+                dom = c('tB'), 
+                buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                scrollY = "600px", 
+                pageLength = 30,
+                order = list(4, 'asc'),
+                autoWidth = TRUE,
+                columnDefs = list(
+                  list(width = '70px',
+                       targets = "_all"),
+                  list(className = 'dt-center', 
+                       targets = "_all"))))
+```
+
+#### Forest plot
+```{r, warning = FALSE}
+
+tab.supp <- data.frame(
+  Outcome = res_S1$outcome,
+  TOST = res_S1$TOST)
+
+metaviz::viz_forest(x = res_S1[, c("d", "d_se")], 
+           variant = "classic",
+           col = "Greys", xlab = "SMD", annotate_CI = TRUE, 
+           study_table = tab.supp,
+           type = "study_only",
+           text_size = 2.2,
+           x_limit = c(-1.5, 1.5),
+           # N = tab.prim$N,
+           x_breaks = seq(-3, 3, 1))
+```
+
+---
+
+### 3. Beebot mastering
+
+```{r}
+dat_semiwide$z_change = dat_semiwide$z1 - dat_semiwide$z0
+dat_s3 = subset(dat_semiwide, !is.na(s4_0_4))
+dat_s3$s4_bin = factor(dat_s3$s4_bin)
+
+summary(lmerTest::lmer(z_change ~ ordered(s4_0_4) + (1|participant) + (1|outcome), data = dat_s3))
+
+res_s3_bin = lmerTest::lmer(z_change ~ s4_bin + (1|participant) + (1|outcome), data = dat_s3)
+summary(res_s3_bin)
+emmeans(res_s3_bin, ~s4_bin)
+
+ggplot(dat_s3, aes(x = s4_0_4, y = z_change)) + 
+  geom_jitter(width=0.2, size = 2, alpha = 0.4) + 
+  theme_bw()
+
+ggplot(dat_s3, aes(x = factor(s4_bin), y = z_change)) + 
+  geom_jitter(width=0.1, size = 2, alpha = 0.4) + 
+  theme_bw()
+
+```
+
+
+```{r}
+# dat_agg <-
+#   dat_long %>%
+#   # pivot_wider(names_from = "time", values_from = "value") %>%
+#   dplyr::group_by(outcome) %>%
+#   dplyr::mutate(z = scale(value)) %>%
+#   dplyr::ungroup() %>%
+#   dplyr::group_by(time, ID, group) %>%
+#   summarise(value_z = sum(z))
+# 
+# ID <- 
+#   dat_agg %>%
+#   group_by(ID) %>%
+#   arrange(time) %>%
+#   mutate(diff = value_z - lag(value_z, default = first(value_z))) %>%
+#   filter(time == "t1") %>%
+#   mutate(Improvement = if_else(diff > 0, "Improvement", "Deterioration"))%>%
+#   dplyr::select(ID, Improvement) %>%
+#   filter(!is.na(Improvement))
+#  
+# dat_line <- merge(dat_agg, ID, by = "ID")
+```
+
+```{r}
+# ggplot(dat_line, aes(x = time, y = value_z, color = group, group = ID)) +
+#   geom_point(size = 2.5, alpha = 0.4) + 
+#   geom_line(size = 1, linetype  = "dotted", alpha = 0.8) +
+#   theme_bw() + 
+#   facet_grid(group ~  Improvement) +
+#   theme(legend.position = "none")
+```
+
+
+```{r, echo = FALSE, results = 'hide'}
+# summary(lm(t1_corsi_end_nb ~ group + t0_corsi_end_nb + age + sexe, data = dat))
+# summary(lm(t1_corsi_end_nb ~ group + t0_corsi_end_nb, data = dat))
+# summary(lm(t1_corsi_end_nb ~ group, data = dat))
+# dat$corsi = dat$t1_corsi_end_nb - dat$t0_corsi_end_nb
+# summary(lm(corsi ~ group, data = dat))
+```
+
